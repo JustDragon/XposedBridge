@@ -106,6 +106,7 @@ import static de.robv.android.xposed.XposedHelpers.setStaticObjectField;
 		findAndHookMethod(ActivityThread.class, "handleBindApplication", "android.app.ActivityThread.AppBindData", new XC_MethodHook() {
 			@Override
 			protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+				XposedInit.loadModules(true);
 				ActivityThread activityThread = (ActivityThread) param.thisObject;
 				ApplicationInfo appInfo = (ApplicationInfo) getObjectField(param.args[0], "appInfo");
 				String reportedPackageName = appInfo.packageName.equals("android") ? "system" : appInfo.packageName;
@@ -240,7 +241,8 @@ import static de.robv.android.xposed.XposedHelpers.setStaticObjectField;
 	}
 
 	/*package*/ static void hookResources() throws Throwable {
-		if (SELinuxHelper.getAppDataFileService().checkFileExists(BASE_DIR + "conf/disable_resources")) {
+		if(true){
+//		if (SELinuxHelper.getAppDataFileService().checkFileExists(BASE_DIR + "conf/disable_resources")) {
 			Log.w(TAG, "Found " + BASE_DIR + "conf/disable_resources, not hooking resources");
 			disableResources = true;
 			return;
@@ -445,7 +447,7 @@ import static de.robv.android.xposed.XposedHelpers.setStaticObjectField;
 	/**
 	 * Try to load all modules defined in <code>BASE_DIR/conf/modules.list</code>
 	 */
-	/*package*/ static void loadModules() throws IOException {
+	/*package*/ static void loadModules(boolean isLoadHookLoadPackage) throws IOException {
 		final String filename = BASE_DIR + "conf/modules.list";
 		BaseService service = SELinuxHelper.getAppDataFileService();
 		if (!service.checkFileExists(filename)) {
@@ -463,7 +465,7 @@ import static de.robv.android.xposed.XposedHelpers.setStaticObjectField;
 		BufferedReader apks = new BufferedReader(new InputStreamReader(stream));
 		String apk;
 		while ((apk = apks.readLine()) != null) {
-			loadModule(apk, topClassLoader);
+			loadModule(apk, topClassLoader,isLoadHookLoadPackage);
 		}
 		apks.close();
 	}
@@ -472,7 +474,7 @@ import static de.robv.android.xposed.XposedHelpers.setStaticObjectField;
 	 * Load a module from an APK by calling the init(String) method for all classes defined
 	 * in <code>assets/xposed_init</code>.
 	 */
-	private static void loadModule(String apk, ClassLoader topClassLoader) {
+	private static void loadModule(String apk, ClassLoader topClassLoader,boolean isLoadHookLoadPackage) {
 		Log.i(TAG, "Loading modules from " + apk);
 
 		if (!new File(apk).exists()) {
@@ -553,8 +555,10 @@ import static de.robv.android.xposed.XposedHelpers.setStaticObjectField;
 						}
 
 						if (moduleInstance instanceof IXposedHookLoadPackage)
-							XposedBridge.hookLoadPackage(new IXposedHookLoadPackage.Wrapper((IXposedHookLoadPackage) moduleInstance));
-
+							if(isLoadHookLoadPackage)
+							{
+								XposedBridge.hookLoadPackage(new IXposedHookLoadPackage.Wrapper((IXposedHookLoadPackage) moduleInstance));
+							}
 						if (moduleInstance instanceof IXposedHookInitPackageResources)
 							XposedBridge.hookInitPackageResources(new IXposedHookInitPackageResources.Wrapper((IXposedHookInitPackageResources) moduleInstance));
 					} else {

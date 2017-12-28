@@ -77,26 +77,23 @@ public final class XposedBridge {
 	 */
 	@SuppressWarnings("deprecation")
 	protected static void main(String[] args) {
+		System.load("/system/lib/libxposed_dalvik.so");
 		// Initialize the Xposed framework and modules
 		try {
-			if (!hadInitErrors()) {
-				initXResources();
+			initXResources();
 
-				SELinuxHelper.initOnce();
-				SELinuxHelper.initForProcess(null);
+			SELinuxHelper.initOnce();
+			SELinuxHelper.initForProcess(null);
 
-				runtime = getRuntime();
-				XPOSED_BRIDGE_VERSION = getXposedVersion();
+			runtime = getRuntime();
+			XPOSED_BRIDGE_VERSION = getXposedVersion();
 
-				if (isZygote) {
-					XposedInit.hookResources();
-					XposedInit.initForZygote();
-				}
-
-				XposedInit.loadModules();
-			} else {
-				Log.e(TAG, "Not initializing Xposed because of previous errors");
+			if (isZygote) {
+				XposedInit.hookResources();
+				XposedInit.initForZygote();
 			}
+
+			XposedInit.loadModules(false);
 		} catch (Throwable t) {
 			Log.e(TAG, "Errors during Xposed initialization", t);
 			disableHooks = true;
@@ -144,7 +141,7 @@ public final class XposedBridge {
 
 	@SuppressLint("SetWorldReadable")
 	private static File ensureSuperDexFile(String clz, Class<?> realSuperClz, Class<?> topClz) throws IOException {
-		XposedBridge.removeFinalFlagNative(realSuperClz);
+//		XposedBridge.removeFinalFlagNative(realSuperClz);
 		File dexFile = DexCreator.ensure(clz, realSuperClz, topClz);
 		dexFile.setReadable(true, false);
 		return dexFile;
@@ -305,7 +302,7 @@ public final class XposedBridge {
 	 * This method is called as a replacement for hooked methods.
 	 */
 	private static Object handleHookedMethod(Member method, int originalMethodId, Object additionalInfoObj,
-			Object thisObject, Object[] args) throws Throwable {
+											 Object thisObject, Object[] args) throws Throwable {
 		AdditionalHookInfo additionalInfo = (AdditionalHookInfo) additionalInfoObj;
 
 		if (disableHooks) {
@@ -427,7 +424,7 @@ public final class XposedBridge {
 	private native synchronized static void hookMethodNative(Member method, Class<?> declaringClass, int slot, Object additionalInfo);
 
 	private native static Object invokeOriginalMethodNative(Member method, int methodId,
-			Class<?>[] parameterTypes, Class<?> returnType, Object thisObject, Object[] args)
+															Class<?>[] parameterTypes, Class<?> returnType, Object thisObject, Object[] args)
 			throws IllegalAccessException, IllegalArgumentException, InvocationTargetException;
 
 	/**
