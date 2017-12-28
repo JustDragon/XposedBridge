@@ -78,11 +78,11 @@ public final class XposedBridge {
 
 	// built-in handlers
 	private static final Map<Member, CopyOnWriteSortedSet<XC_MethodHook>> sHookedMethodCallbacks
-									= new HashMap<Member, CopyOnWriteSortedSet<XC_MethodHook>>();
+			= new HashMap<Member, CopyOnWriteSortedSet<XC_MethodHook>>();
 	private static final CopyOnWriteSortedSet<XC_LoadPackage> sLoadedPackageCallbacks
-									= new CopyOnWriteSortedSet<XC_LoadPackage>();
+			= new CopyOnWriteSortedSet<XC_LoadPackage>();
 	private static final CopyOnWriteSortedSet<XC_InitPackageResources> sInitPackageResourcesCallbacks
-									= new CopyOnWriteSortedSet<XC_InitPackageResources>();
+			= new CopyOnWriteSortedSet<XC_InitPackageResources>();
 
 	/**
 	 * Called when native methods and other things are initialized, but before preloading classes etc.
@@ -119,7 +119,7 @@ public final class XposedBridge {
 					initXbridgeZygote();
 				}
 
-				loadModules(startClassName);
+				loadModules(startClassName,false);
 			} else {
 				log("Errors during native Xposed initialization");
 			}
@@ -184,6 +184,7 @@ public final class XposedBridge {
 		// normal process initialization (for new Activity, Service, BroadcastReceiver etc.)
 		findAndHookMethod(ActivityThread.class, "handleBindApplication", "android.app.ActivityThread.AppBindData", new XC_MethodHook() {
 			protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+				XposedBridge.loadModules(getStartClassName(),true);
 				ActivityThread activityThread = (ActivityThread) param.thisObject;
 				ApplicationInfo appInfo = (ApplicationInfo) getObjectField(param.args[0], "appInfo");
 				ComponentName instrumentationName = (ComponentName) getObjectField(param.args[0], "instrumentationName");
@@ -217,19 +218,19 @@ public final class XposedBridge {
 		// system thread initialization
 		findAndHookMethod("com.android.server.ServerThread", null,
 				Build.VERSION.SDK_INT < 19 ? "run" : "initAndLoop", new XC_MethodHook() {
-			@Override
-			protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-				loadedPackagesInProcess.add("android");
+					@Override
+					protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+						loadedPackagesInProcess.add("android");
 
-				LoadPackageParam lpparam = new LoadPackageParam(sLoadedPackageCallbacks);
-				lpparam.packageName = "android";
-				lpparam.processName = "android"; // it's actually system_server, but other functions return this as well
-				lpparam.classLoader = BOOTCLASSLOADER;
-				lpparam.appInfo = null;
-				lpparam.isFirstApplication = true;
-				XC_LoadPackage.callAll(lpparam);
-			}
-		});
+						LoadPackageParam lpparam = new LoadPackageParam(sLoadedPackageCallbacks);
+						lpparam.packageName = "android";
+						lpparam.processName = "android"; // it's actually system_server, but other functions return this as well
+						lpparam.classLoader = BOOTCLASSLOADER;
+						lpparam.appInfo = null;
+						lpparam.isFirstApplication = true;
+						XC_LoadPackage.callAll(lpparam);
+					}
+				});
 
 		// when a package is loaded for an existing process, trigger the callbacks as well
 		hookAllConstructors(LoadedApk.class, new XC_MethodHook() {
@@ -257,13 +258,13 @@ public final class XposedBridge {
 
 		findAndHookMethod("android.app.ApplicationPackageManager", null, "getResourcesForApplication",
 				ApplicationInfo.class, new XC_MethodHook() {
-			@Override
-			protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-				ApplicationInfo app = (ApplicationInfo) param.args[0];
-				XResources.setPackageNameForResDir(app.packageName,
-					app.uid == Process.myUid() ? app.sourceDir : app.publicSourceDir);
-			}
-		});
+					@Override
+					protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+						ApplicationInfo app = (ApplicationInfo) param.args[0];
+						XResources.setPackageNameForResDir(app.packageName,
+								app.uid == Process.myUid() ? app.sourceDir : app.publicSourceDir);
+					}
+				});
 
 		if (!new File(BASE_DIR + "conf/disable_resources").exists()) {
 			hookResources();
@@ -374,18 +375,18 @@ public final class XposedBridge {
 	private static void hookXposedInstaller(ClassLoader classLoader) {
 		try {
 			findAndHookMethod(INSTALLER_PACKAGE_NAME + ".XposedApp", classLoader, "getActiveXposedVersion",
-				XC_MethodReplacement.returnConstant(XPOSED_BRIDGE_VERSION));
+					XC_MethodReplacement.returnConstant(XPOSED_BRIDGE_VERSION));
 		} catch (Throwable t) { XposedBridge.log(t); }
 	}
 
 	/**
 	 * Try to load all modules defined in <code>BASE_DIR/conf/modules.list</code>
 	 */
-	private static void loadModules(String startClassName) throws IOException {
+	private static void loadModules(String startClassName,boolean isLoadHookLoadPackage) throws IOException {
 		BufferedReader apks = new BufferedReader(new FileReader(BASE_DIR + "conf/modules.list"));
 		String apk;
 		while ((apk = apks.readLine()) != null) {
-			loadModule(apk, startClassName);
+			loadModule(apk, startClassName,isLoadHookLoadPackage);
 		}
 		apks.close();
 	}
@@ -395,7 +396,7 @@ public final class XposedBridge {
 	 * in <code>assets/xposed_init</code>.
 	 */
 	@SuppressWarnings("deprecation")
-	private static void loadModule(String apk, String startClassName) {
+	private static void loadModule(String apk, String startClassName,boolean isLoadHookLoadPackage) {
 		log("Loading modules from " + apk);
 
 		if (!new File(apk).exists()) {
@@ -440,8 +441,10 @@ public final class XposedBridge {
 						}
 
 						if (moduleInstance instanceof IXposedHookLoadPackage)
-							hookLoadPackage(new IXposedHookLoadPackage.Wrapper((IXposedHookLoadPackage) moduleInstance));
-
+							if(isLoadHookLoadPackage)
+							{
+								hookLoadPackage(new IXposedHookLoadPackage.Wrapper((IXposedHookLoadPackage) moduleInstance));
+							}
 						if (moduleInstance instanceof IXposedHookInitPackageResources)
 							hookInitPackageResources(new IXposedHookInitPackageResources.Wrapper((IXposedHookInitPackageResources) moduleInstance));
 					} else {
@@ -578,7 +581,7 @@ public final class XposedBridge {
 	 * This method is called as a replacement for hooked methods.
 	 */
 	private static Object handleHookedMethod(Member method, int originalMethodId, Object additionalInfoObj,
-			Object thisObject, Object[] args) throws Throwable {
+											 Object thisObject, Object[] args) throws Throwable {
 		AdditionalHookInfo additionalInfo = (AdditionalHookInfo) additionalInfoObj;
 
 		if (disableHooks) {
@@ -705,7 +708,7 @@ public final class XposedBridge {
 	private native synchronized static void hookMethodNative(Member method, Class<?> declaringClass, int slot, Object additionalInfo);
 
 	private native static Object invokeOriginalMethodNative(Member method, int methodId,
-			Class<?>[] parameterTypes, Class<?> returnType, Object thisObject, Object[] args)
+															Class<?>[] parameterTypes, Class<?> returnType, Object thisObject, Object[] args)
 			throws IllegalAccessException, IllegalArgumentException, InvocationTargetException;
 
 	/** Old method signature to avoid crashes if only XposedBridge.jar is updated, will be removed in the next version */
